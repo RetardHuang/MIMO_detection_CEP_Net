@@ -23,9 +23,9 @@ class FirstNlayer(keras.layers.Layer):#第一层的单层结构
         self.Nu = Nu
         self.Nt = Nt
         self.noise_var = self.Nt / self.Nu * tf.pow(10., -SNR / 10.)
-    def call(self,y,H):
-        A = matmulshit(H, H,transpose_a = True) + noise_var * tf.eye(2 * self.Nt)
-        b = matmulshit(H, y,transpose_a = True)
+    def call(self,y,H,HH):
+        A = matmulshit(HH, H) + noise_var * tf.eye(2 * self.Nt)
+        b = matmulshit(HH, y)
         d_ = b
         r_ = d_
         x0 = tf.zeros(shape= tf.shape(b), name="x0")
@@ -46,11 +46,11 @@ class Nlayer(keras.layers.Layer):#单层结构
         self.ifhyperParameter= ifhyperParameter
     def build(self,inputshape):
         if self.ifhyperParameter:#如果是超参数 则是每层的权重对应一个发射天线
-            self.alpha_ = self.add_weight(shape=(2*self.Nt, 1),initializer=keras.initializers.Constant(0),trainable=True,name="alpha")
-            self.beta_ = self.add_weight(shape=(2*self.Nt, 1), initializer=keras.initializers.Constant(0),trainable=True,name="beta")
+            self.alpha_ = self.add_weight(shape=(2*self.Nt, 1),initializer=keras.initializers.Zeros(),trainable=True,name="alpha")
+            self.beta_ = self.add_weight(shape=(2*self.Nt, 1), initializer=keras.initializers.Zeros(),trainable=True,name="beta")
         else:#如果是正常参数 则每层权重对应一个 标量
-            self.alpha_ = self.add_weight(shape=(1, ), initializer=keras.initializers.Constant(0), trainable=True,name="alpha")
-            self.beta_ = self.add_weight(shape=(1, ),initializer=keras.initializers.Constant(0), trainable=True,name="beta")
+            self.alpha_ = self.add_weight(shape=(1, ), initializer=keras.initializers.Zeros(), trainable=True,name="alpha")
+            self.beta_ = self.add_weight(shape=(1, ),initializer=keras.initializers.Zeros(), trainable=True,name="beta")
     def call(self, r_, xhat_,d_,A):
         if self.ifhyperParameter:#如果是超参数 则是每层的权重对应一个发射天线
             r_ = r_ - tf.multiply(self.alpha_ , matmulshit(A, d_))
@@ -110,6 +110,7 @@ class multi_frozenlayer_model(Model):
                                                          #save_weights_only=True,
                                                          #save_best_only=True)
         tensorboard_callback = TensorBoard(log_dir=r"./mytensotboard")
+        #stopcallback = tf.keras.callbacks.EarlyStopping(monitor="loss", mode = "min",min_delta=1e-3,verbose = 2)
         model.summary()
         # 全部冻结
         for layer in self.layers:
@@ -125,7 +126,7 @@ class multi_frozenlayer_model(Model):
                 #打开该层
                 layer.trainable = True
                 # 生成训练集
-                XCube, HCube, YCube = channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
+                XCube, HCube,HHCube, YCube = channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
                 # 编译网络，也是载入优化器和损失函数的地方
                 if number%2 ==1:
                     self.compile(optimizer=big_optimizer_adam,
@@ -139,7 +140,7 @@ class multi_frozenlayer_model(Model):
                                  )
                 # 断点存储位置
                 history.append(model.fit(  # 使用model.fit()方法来执行训练过程，
-                    x= [YCube,HCube], y = XCube,  # 告知训练集的输入以及标签，
+                    x= [YCube,HCube,HHCube], y = XCube,  # 告知训练集的输入以及标签，
                     batch_size=each_layer_batchsize,  # 每一批batch的大小为32，
                     epochs=eachlayer_epochs,
                     validation_split=validation_split,  # 从测试集中划分80%给训练集
@@ -167,11 +168,12 @@ class multi_frozenlayer_model(Model):
 #所以这里我们在类外部构建网络！
 def NNet(Nu,Nt, SNR,layersNum=20,ifhyperparameter = False):#多层结构
     H = Input(shape=(2*Nu,2*Nt), name='H')
+    HH = Input(shape=(2*Nt,2*Nu), name='HH')
     y = Input(shape=(2*Nu,1), name='y')
-    r_, xhat_, d_, A = FirstNlayer(Nu=Nu, Nt=Nt, SNR=SNR)(y,H)
+    r_, xhat_, d_, A = FirstNlayer(Nu=Nu, Nt=Nt, SNR=SNR)(y,H,HH)
     for layer_id in range(1, layersNum):  # 第几个卷积层
         r_, xhat_, d_, A = Nlayer(Nu=Nu, Nt=Nt, ifhyperParameter=ifhyperparameter)(r_, xhat_, d_, A)
-    model = multi_frozenlayer_model(inputs=(y, H), outputs=xhat_)
+    model = multi_frozenlayer_model(inputs=(y, H,HH), outputs=xhat_)
     return model
 
 #def quantizition(type = "hard"):
@@ -205,7 +207,7 @@ if __name__ == '__main__':
     INIT_ETA = 5e-5  # initial learning rate
     ##########################PART.2 生成网络########################
     #生成网络
-    model = NNet(Nu = Nu,Nt = Nt,layersNum = layersNum,SNR=SNR,ifhyperparameter=True)
+    model = NNet(Nu = Nu,Nt = Nt,layersNum = layersNum,SNR=SNR,ifhyperparameter=False)
     ##########################PART.3 训练网络########################
 
     history = model.multiple_Frozen_compile_fit(  # 使用model.fit()方法来执行训练过程，
