@@ -90,8 +90,17 @@ class multi_frozenlayer_model(Model):
                                     ):
         # 生成信道模型
         channel = Channel_generator(Nu=Nu, Nt=Nt, L_mu=L_mu, noise_var=noise_var)
-        # 初始化信道矩阵
-        optimizer_adm = keras.optimizers.Adam(learning_rate=INIT_ETA)  # instantiate the solver
+        # 训练器的学习率衰减
+
+        #三种Optimizer
+        #1.指数衰减型
+        lr_schedule = keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=1e-3,decay_steps=train_size,decay_rate=0.9)
+        optimizer_adm = keras.optimizers.Adam(learning_rate = lr_schedule)  # instantiate the solver
+        #2.大型
+        big_optimizer_adam= keras.optimizers.Adam(learning_rate = 1e-3)
+        #3.小型
+        small_optimizer_adam= keras.optimizers.Adam(learning_rate = 5e-4)
+
         checkpoint_save_path = "./checkpoint/cep8.ckpt"
         if os.path.exists(checkpoint_save_path + '.index'):
             print('-------------load the model-----------------')
@@ -107,19 +116,27 @@ class multi_frozenlayer_model(Model):
             layer.trainable = False
         # 依次开启层，然后训练
         history=[]
+        number = 0
         for layer in self.layers :
             if len(layer.non_trainable_variables)!=0:
+                number = number + 1
                 #
-                print('Now, training layer:',layer)
+                print('Now, training layer:',layer.name)
                 #打开该层
                 layer.trainable = True
                 # 生成训练集
                 XCube, HCube, YCube = channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
                 # 编译网络，也是载入优化器和损失函数的地方
-                self.compile(optimizer=optimizer_adm,
-                              loss=loss_norm_nmse,
-                              metrics=[detect_metric]
-                              )
+                if number%2 ==1:
+                    self.compile(optimizer=big_optimizer_adam,
+                                  loss=loss_norm_nmse,
+                                  metrics=[detect_metric]
+                                  )
+                else:
+                    self.compile(optimizer=small_optimizer_adam,
+                                 loss=loss_norm_nmse,
+                                 metrics=[detect_metric]
+                                 )
                 # 断点存储位置
                 history.append(model.fit(  # 使用model.fit()方法来执行训练过程，
                     x= [YCube,HCube], y = XCube,  # 告知训练集的输入以及标签，
@@ -135,6 +152,12 @@ class multi_frozenlayer_model(Model):
             else:
                 pass
         return history
+
+    def get_config(self):
+        config = super().get_config()
+        return config
+
+
 #我在这里吐槽下，Model的子类构建方法弄得跟屎一样！你根本无法采用批学习
 #如果你在modelclass里面定义网络结构，会出现 权重无法点乘的傻逼问题！！！
 #而且，乘法也要注意，如果时矩阵乘向量，必须要采用linalg.matvec这个函数
@@ -168,11 +191,11 @@ if __name__ == '__main__':
     noise_var = Nt/Nu * tf.pow(10., -SNR / 10.)
 
     #训练集大小
-    train_size = 3030
+    train_size = 10100
     #测试集大小
     test_size = 1
     #网络层数
-    layersNum = 16
+    layersNum = 30
     MAX_EPOCHS = 1
     BATCH_SIZE = 1  # mini-batch set size
     N_TRAIN = 10 ** 5  # training set size
@@ -192,7 +215,9 @@ if __name__ == '__main__':
         validation_split=0.01,
         validation_freq=1,  # 测试的间隔次数为20
     )
-    model.save('model/my_model.h5')
+    #savepath = tf.train.latest_checkpoint('/content/training_2')
+    #model.save(savepath)
+    model.save_weights("model/my_model.h5")
     # 重新加载模型
     #model = models.load_model('model/my_model.h5')
     # print(model.trainable_variables)
@@ -208,7 +233,7 @@ if __name__ == '__main__':
     val_acc = history[-1].history['detect_metric']
     loss = history[-1].history['loss']
     val_loss = history[-1].history['val_loss']
-
+    """
     plt.subplot(1, 2, 1)
     plt.plot(acc, label='Training Accuracy')
     plt.plot(val_acc, label='Validation Accuracy')
@@ -221,3 +246,4 @@ if __name__ == '__main__':
     plt.title('Training and Validation Loss')
     plt.legend()
     plt.show()
+    """
