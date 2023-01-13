@@ -82,36 +82,40 @@ def detect_metric(y_true, y_pred):
 #我在这里定义一个子类，这个子类的方法中间就是冻结层的训练方法
 #为什么不在这个子类里面直接定义网络结构呢，请看我下一段话！
 class multi_frozenlayer_model(Model):
+    def setup_data_optimizer(self):
+        # 生成信道模型
+        self.channel = Channel_generator(Nu=Nu, Nt=Nt, L_mu=L_mu, noise_var=noise_var)
+        # 训练器的学习率衰减
+
+        #三种Optimizer
+        #1.指数衰减型
+        lr_schedule = keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=1e-3,decay_steps=train_size,decay_rate=0.9)
+        self.optimizer_adm = keras.optimizers.Adam(learning_rate = lr_schedule)  # instantiate the solver
+        #2.大型
+        self.big_optimizer_adam= keras.optimizers.Adam(learning_rate = 1e-3)
+        #3.小型
+        self.small_optimizer_adam= keras.optimizers.Adam(learning_rate = 5e-4)
+
+        checkpoint_save_path = "./checkpoint/cep8.ckpt"
+        if os.path.exists(checkpoint_save_path + '.index'):
+            print('-------------load the model-----------------')
+            self.load_weights(checkpoint_save_path)
+
+        self.cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_save_path,
+        save_weights_only=True,
+        save_best_only=True)
+        self.tensorboard_callback = TensorBoard(log_dir=r"./mytensotboard")
+        #stopcallback = tf.keras.callbacks.EarlyStopping(monitor="loss", mode = "min",min_delta=1e-3,verbose = 2)
+        self.summary()
+        pass
+    #下面的这个方法是采用的Wei Yi论文里的方法，即一层一层训练，也就是只启用一层，其余层冻结
     def multiple_Frozen_compile_fit(self,train_size,
                                     each_layer_batchsize,
                                     eachlayer_epochs,
                                     validation_split,
                                     validation_freq
                                     ):
-        # 生成信道模型
-        channel = Channel_generator(Nu=Nu, Nt=Nt, L_mu=L_mu, noise_var=noise_var)
-        # 训练器的学习率衰减
-
-        #三种Optimizer
-        #1.指数衰减型
-        lr_schedule = keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=1e-3,decay_steps=train_size,decay_rate=0.9)
-        optimizer_adm = keras.optimizers.Adam(learning_rate = lr_schedule)  # instantiate the solver
-        #2.大型
-        big_optimizer_adam= keras.optimizers.Adam(learning_rate = 1e-3)
-        #3.小型
-        small_optimizer_adam= keras.optimizers.Adam(learning_rate = 5e-4)
-
-        checkpoint_save_path = "./checkpoint/cep8.ckpt"
-        if os.path.exists(checkpoint_save_path + '.index'):
-            print('-------------load the model-----------------')
-            model.load_weights(checkpoint_save_path)
-
-        #cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_save_path,
-                                                         #save_weights_only=True,
-                                                         #save_best_only=True)
-        tensorboard_callback = TensorBoard(log_dir=r"./mytensotboard")
-        #stopcallback = tf.keras.callbacks.EarlyStopping(monitor="loss", mode = "min",min_delta=1e-3,verbose = 2)
-        model.summary()
+        self.setup_data_optimizer()
         # 全部冻结
         for layer in self.layers:
             layer.trainable = False
@@ -126,32 +130,54 @@ class multi_frozenlayer_model(Model):
                 #打开该层
                 layer.trainable = True
                 # 生成训练集
-                XCube, HCube,HHCube, YCube = channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
+                XCube, HCube,HHCube, YCube = self.channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
                 # 编译网络，也是载入优化器和损失函数的地方
                 if number%2 ==1:
-                    self.compile(optimizer=big_optimizer_adam,
+                    self.compile(optimizer=self.big_optimizer_adam,
                                   loss=loss_norm_nmse,
                                   metrics=[detect_metric]
                                   )
                 else:
-                    self.compile(optimizer=small_optimizer_adam,
+                    self.compile(optimizer=self.small_optimizer_adam,
                                  loss=loss_norm_nmse,
                                  metrics=[detect_metric]
                                  )
                 # 断点存储位置
-                history.append(model.fit(  # 使用model.fit()方法来执行训练过程，
+                history.append(self.fit(  # 使用model.fit()方法来执行训练过程，
                     x= [YCube,HCube,HHCube], y = XCube,  # 告知训练集的输入以及标签，
                     batch_size=each_layer_batchsize,  # 每一批batch的大小为32，
                     epochs=eachlayer_epochs,
                     validation_split=validation_split,  # 从测试集中划分80%给训练集
                     validation_freq=validation_freq,  # 测试的间隔次数为20
-                    callbacks=[tensorboard_callback]
+                    callbacks=self.tensorboard_callback
                 )
                 )
                 #该层关闭
                 layer.trainable = False
             else:
                 pass
+        return history
+
+    def normal_compile_fit(self,train_size,
+                                    each_layer_batchsize,
+                                    eachlayer_epochs,
+                                    validation_split,
+                                    validation_freq
+                                    ):
+        self.setup_data_optimizer()
+        self.compile(optimizer=self.optimizer_adm,
+                     loss=loss_norm_nmse,
+                     metrics=[detect_metric]
+                     )
+        XCube, HCube, HHCube, YCube = self.channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
+        history = self.fit(  # 使用model.fit()方法来执行训练过程，
+            x=[YCube, HCube, HHCube], y=XCube,  # 告知训练集的输入以及标签，
+            batch_size=each_layer_batchsize,  # 每一批batch的大小为32，
+            epochs=eachlayer_epochs,
+            validation_split=validation_split,  # 从测试集中划分80%给训练集
+            validation_freq=validation_freq,  # 测试的间隔次数为20
+            callbacks=[self.tensorboard_callback,self.cp_callback]
+        )
         return history
 
     def get_config(self):
@@ -193,13 +219,13 @@ if __name__ == '__main__':
     noise_var = Nt/Nu * tf.pow(10., -SNR / 10.)
 
     #训练集大小
-    train_size = 10100
+    train_size = 40400
     #测试集大小
     test_size = 1
     #网络层数
     layersNum = 30
-    MAX_EPOCHS = 1
-    BATCH_SIZE = 1  # mini-batch set size
+    MAX_EPOCHS = 5
+    BATCH_SIZE = 5  # mini-batch set size
     N_TRAIN = 10 ** 5  # training set size
     N_ITER = N_TRAIN // BATCH_SIZE  # number of iterations at each epoch
     TOL = 10 ** -4  # reference value used for convergence
@@ -207,10 +233,10 @@ if __name__ == '__main__':
     INIT_ETA = 5e-5  # initial learning rate
     ##########################PART.2 生成网络########################
     #生成网络
-    model = NNet(Nu = Nu,Nt = Nt,layersNum = layersNum,SNR=SNR,ifhyperparameter=False)
+    model = NNet(Nu = Nu,Nt = Nt,layersNum = layersNum,SNR=SNR,ifhyperparameter=True)
     ##########################PART.3 训练网络########################
 
-    history = model.multiple_Frozen_compile_fit(  # 使用model.fit()方法来执行训练过程，
+    history = model.normal_compile_fit(  # 使用model.fit()方法来执行训练过程，
         train_size=train_size,
         each_layer_batchsize=BATCH_SIZE,  #
         eachlayer_epochs=MAX_EPOCHS,
@@ -219,7 +245,7 @@ if __name__ == '__main__':
     )
     #savepath = tf.train.latest_checkpoint('/content/training_2')
     #model.save(savepath)
-    model.save_weights("model/my_model.h5")
+    model.save_weights("my_model.h5")
     # 重新加载模型
     #model = models.load_model('model/my_model.h5')
     # print(model.trainable_variables)
@@ -231,11 +257,10 @@ if __name__ == '__main__':
     file.close()
     #######################PART.4 展示各种曲线   ######################
     # 显示训练集和验证集的acc和loss曲线
-    acc = history[-1].history['detect_metric']
-    val_acc = history[-1].history['detect_metric']
-    loss = history[-1].history['loss']
-    val_loss = history[-1].history['val_loss']
-    """
+    acc = history.history['detect_metric']
+    val_acc = history.history['detect_metric']
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
     plt.subplot(1, 2, 1)
     plt.plot(acc, label='Training Accuracy')
     plt.plot(val_acc, label='Validation Accuracy')
@@ -248,4 +273,3 @@ if __name__ == '__main__':
     plt.title('Training and Validation Loss')
     plt.legend()
     plt.show()
-    """
