@@ -81,7 +81,7 @@ def BER(y_true, y_pred):
     return 10*log(tf.reduce_mean(tf.abs(y_true-tf.sign(y_pred))/2))
 #我在这里定义一个子类，这个子类的方法中间就是冻结层的训练方法
 #为什么不在这个子类里面直接定义网络结构呢，请看我下一段话！
-class multi_frozenlayer_model(Model):
+class multi_layer_model(Model):
     #我自己写的API就是一坨屎，没办法keras本身就是一坨屎，错的不是我，错的是世界
     #你他妈见到过构造函数是在类外边的吗？我他妈没见过
     #如果你把构造函数写在里面等着报bug吧！
@@ -118,7 +118,7 @@ class multi_frozenlayer_model(Model):
                                     validation_split,
                                     validation_freq
                                     ):
-        #指数衰减型损失函数
+        #1.指数衰减型
         lr_schedule = keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=1e-3,decay_steps=train_size,decay_rate=0.9)
         self.optimizer_adm = keras.optimizers.Adam(learning_rate = lr_schedule)  # instantiate the solver
         self.setup_data_optimizer()
@@ -173,7 +173,9 @@ def NNet(Nu,Nt, SNR,layersNum=20,ifhyperparameter = False):#多层结构
     r_, xhat_, d_, A = FirstNlayer(Nu=Nu, Nt=Nt, SNR=SNR)(y,H,HH)
     for layer_id in range(1, layersNum):  # 第几个卷积层
         r_, xhat_, d_, A = Nlayer(Nu=Nu, Nt=Nt, ifhyperParameter=ifhyperparameter)(r_, xhat_, d_, A)
-    model = multi_frozenlayer_model(inputs=(y, H,HH), outputs=xhat_)
+
+
+    model = multi_layer_model(inputs=(y, H,HH), outputs=xhat_)
     model.setup_shit(Nt,Nu,SNR,L_mu= 8)
     model.setup_data_optimizer()
     return model
