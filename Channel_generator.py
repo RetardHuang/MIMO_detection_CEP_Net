@@ -10,7 +10,7 @@ import math
 from scipy.linalg import toeplitz
 from scipy.linalg import sqrtm
 import scipy.io as scio
-def npcplx_FOR_X(height,width):
+def npcplx_FOR_X(height,width,modulation_order = 2):
     realPart = 1 - 2*np.random.binomial(size=height*width, n=1, p=0.5).reshape((height,width))
     imagPart = 1 - 2*np.random.binomial(size=height*width, n=1, p=0.5).reshape((height,width))
     return realPart + 1j * imagPart
@@ -20,7 +20,7 @@ def npcplx_FOR_N(height,width,noise_scale):
     imagPart = np.random.normal(size=(height,width), scale=noise_scale).astype(np.float32)
     return realPart + 1j * imagPart
 class Channel_generator():
-    def __init__(self,Nu,Nt,L_mu=8,noise_var = 0.1,type = "IID"):
+    def __init__(self,Nu,Nt,L_mu=8,noise_var = 0.1,type = "IID",modulation_order = 2):
         self.aChannelMatrix = np.zeros(shape=(Nu, Nt)).astype(np.complex64);
         self.Nu = Nu
         self.Nt = Nt
@@ -28,7 +28,13 @@ class Channel_generator():
         self.L_mu = L_mu
         self.noise_scale = math.sqrt(noise_var)
         self.changeH()
-        # INITIALIZING CHANNEL
+
+        assert modulation_order ==1 or modulation_order ==2 or modulation_order ==4 or \
+               modulation_order ==6 or modulation_order ==8,"Unsupported Modulation order"
+
+        self.modulation_chart =scio.loadmat('ConsChart.mat')["cons_" + str(modulation_order)]  # 星座点初始化
+        pass
+
     def changeH(self):
         if self.type =="IID":
             self.aChannelMatrix = np.random.normal(size=(self.Nu, self.Nt), scale=1.0 / math.sqrt(self.Nu * 2)).astype(np.float32) + 1j * np.random.normal(
@@ -107,7 +113,7 @@ class Channel_generator():
         return XCube,HCube,HHCube,YCube
 if __name__ == '__main__':
     #如下是使用说明
-    channel = Channel_generator(64,32)
+    channel = Channel_generator(64,32,modulation_order=8)
     channel.changeH()
     print(channel.output(ifreal=False,setnum=1))
     channel.changeH()

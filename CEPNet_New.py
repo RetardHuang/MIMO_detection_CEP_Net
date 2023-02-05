@@ -111,6 +111,59 @@ class multi_frozenlayer_model(Model):
         self.stopcallback = tf.keras.callbacks.EarlyStopping(monitor="loss", mode = "min",min_delta=1e-3,verbose = 1,patience = 3)
         self.summary()
         pass
+    def multiple_Frozen_compile_fit(self,train_size,
+                                    each_layer_batchsize,
+                                    eachlayer_epochs,
+                                    validation_split,
+                                    validation_freq
+                                    ):
+        self.setup_data_optimizer()
+        # 全部冻结
+        for layer in self.layers:
+            layer.trainable = False
+        # 依次开启层，然后训练
+        history=[]
+        number = 0
+        for layer in self.layers :
+            if len(layer.non_trainable_variables)!=0:
+                number = number + 1
+                #
+                print('Now, training layer:',layer.name)
+                #打开该层
+                layer.trainable = True
+                # 生成训练集
+                XCube, HCube,HHCube, YCube = self.channel.multipleoutput(setnum=train_size, ifreal=True, ifchangeChannel=True)
+                # 编译网络，也是载, 入优化器和损失函数的地方
+                #大型
+                big_optimizer_adam = keras.optimizers.Adam(learning_rate=1e-3)
+                #小型
+                small_optimizer_adam = keras.optimizers.Adam(learning_rate=5e-4)
+
+                if number%2 ==1:
+                    self.compile(optimizer=big_optimizer_adam,
+                                 loss=loss_norm_nmse,
+                                 metrics=[BER]
+                                 )
+                else:
+                    self.compile(optimizer=small_optimizer_adam,
+                                 loss=loss_norm_nmse,
+                                 metrics=[BER]
+                                 )
+                # 断点存储位置
+                history.append(self.fit(  # 使用model.fit()方法来执行训练过程，
+                    x= [YCube,HCube,HHCube], y = XCube,  # 告知训练集的输入以及标签，
+                    batch_size=each_layer_batchsize,  # 每一批batch的大小为32，
+                    epochs=eachlayer_epochs,
+                    validation_split=validation_split,  # 从测试集中划分80%给训练集
+                    validation_freq=validation_freq,  # 测试的间隔次数为20
+                    callbacks=self.tensorboard_callback
+                )
+                )
+                #该层关闭
+                layer.trainable = False
+            else:
+                pass
+        return history
     #下面的这个方法是采用的Wei Yi论文里的方法，即一层一层训练，也就是只启用一层，其余层冻结
     def normal_compile_fit(self,train_size,
                                     batchsize,
@@ -192,7 +245,6 @@ if __name__ == '__main__':
     L_mu = 8
     #白噪声方差
     SNR = 30
-    noise_var = Nt/Nu * tf.pow(10., -SNR / 10.)
 
     #训练集大小
     train_size = 40400

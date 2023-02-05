@@ -22,21 +22,18 @@ if __name__ == '__main__':
     #多径数
     L_mu = 8
     #训练集大小
-    train_size = 10000
+    train_size = 100000
     #测试集大小
     test_size = 50
     #网络层数
-    layersNum = 30
+    layersNum = 16
     SNR = 30
     BATCH_SIZE = 1  # mini-batch set size
     model = NNet(Nu = Nu,Nt = Nt,layersNum = layersNum,SNR=SNR,ifhyperparameter=True)
-    history = model.normal_compile_fit(  # 使用model.fit()方法来执行训练过程，
-        train_size=train_size,
-        batchsize=BATCH_SIZE,  #
-        epochs=20,
-        validation_split=0.01,
-        validation_freq=1,  # 测试的间隔次数为20
-    )
-    SER = model.multiple_predict(test_size = 1000,SNR = 30,iflogSER=False)
+    #history = model.multiple_Frozen_compile_fit(train_size=train_size,each_layer_batchsize = BATCH_SIZE,eachlayer_epochs=1, validation_split=0.01,  validation_freq=120)
+    #history = model.normal_compile_fit(train_size=train_size,batchsize=BATCH_SIZE, epochs=1, validation_split=0.01,  validation_freq=120)
+    #model.save_weights("my_model.h5")
+    model.load_weights("my_model.h5")
+    SER = model.multiple_predict(test_size = 1000,SNR =4,iflogSER=False)
     print("SER is",tf.get_static_value(SER))
     pass
