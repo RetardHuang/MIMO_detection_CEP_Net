@@ -34,6 +34,6 @@ if __name__ == '__main__':
     #history = model.normal_compile_fit(train_size=train_size,batchsize=BATCH_SIZE, epochs=1, validation_split=0.01,  validation_freq=120)
     #model.save_weights("my_model.h5")
     model.load_weights("my_model.h5")
-    SER = model.multiple_predict(test_size = 1000,SNR =4,iflogSER=False)
+    SER = model.multiple_predict(test_size = 1000,SNR =100,iflogSER=False)
     print("SER is",tf.get_static_value(SER))
     pass
