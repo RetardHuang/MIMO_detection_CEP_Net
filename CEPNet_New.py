@@ -76,9 +76,12 @@ def loss_norm_nmse(y_true,y_pred):
     nmse_denom_ = tf.nn.l2_loss(y_true)
     return loss_ / nmse_denom_
 def BER(y_true, y_pred):
-    cplx_y_true = y_true[0:len(y_true)/2] + 1j* y_true[len(y_true)/2 : -1]
-    cplx_y_pred = y_pred[0:len(y_pred)/2] + 1j* y_pred[len(y_pred)/2 : -1]
-    return 10*log(tf.reduce_mean(np.equal(cplx_y_true,cplx_y_pred)))
+    #cplx_y_true = y_true[0:len(y_true)/2] + 1j* y_true[len(y_true)/2 : -1]
+    #cplx_y_pred = y_pred[0:len(y_pred)/2] + 1j* y_pred[len(y_pred)/2 : -1]
+    #return 10*log(tf.reduce_mean(np.equal(cplx_y_true,cplx_y_pred)))
+    return 10 * log(tf.reduce_mean(tf.abs(y_true - tf.sign(y_pred)) / 2))
+
+
 #我在这里定义一个子类，这个子类的方法中间就是冻结层的训练方法
 #为什么不在这个子类里面直接定义网络结构呢，请看我下一段话！
 class multi_frozenlayer_model(Model):
@@ -196,13 +199,14 @@ class multi_frozenlayer_model(Model):
         XCube, HCube, HHCube, YCube = predict_channel.multipleoutput(setnum=test_size, ifreal=True, ifchangeChannel=True)
         predictions = self.predict([YCube,HCube,HHCube], batch_size=1)
         predicted_hard = predict_channel.harddes(predictions)
-        shit = predicted_hard[:,0:self.Nt,:]
+        #shit = predicted_hard[:,0:self.Nt,:]
         cplx_pre_hard = np.squeeze(predicted_hard[:,0:self.Nt,:] + 1j * predicted_hard[:,self.Nt-1: -1,:])
         cplx_x_trans = XCube[:,0:self.Nt] + 1j * XCube[:,self.Nt-1: -1]
         Truth = cplx_pre_hard == cplx_x_trans
-        shit = reduce_all(Truth,axis=1)
-        num_true = tf.reduce_sum(tf.cast(shit, tf.int32))
-        SER = (test_size - num_true)/test_size
+        #predicted_hard = tf.squeeze(tf.sign(predictions),axis = 2)#为了删除第三个长度为1的维，用squeeze
+        #Truth = XCube == predicted_hard
+        num_true = tf.reduce_sum(tf.cast(Truth, tf.int32))
+        SER = (test_size*self.Nt - num_true)/test_size/self.Nt
         if iflogSER:
             if SER ==0:
                 return -math.inf

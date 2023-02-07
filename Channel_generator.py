@@ -127,6 +127,7 @@ class Channel_generator():
         Rv_estimated_X = np.where(Rv_estimated_X <-self.max_cons,-self.max_cons,Rv_estimated_X)
         Rv_estimated_X = np.where(Rv_estimated_X > self.max_cons, self.max_cons,Rv_estimated_X)
         #判断
+        Rv_estimated_X= np.where(Rv_estimated_X ==0 , np.sign(Rv_estimated_X), Rv_estimated_X)
         Rv_X_hard= np.where(np.ceil(Rv_estimated_X) % 2, np.ceil(Rv_estimated_X), np.floor(Rv_estimated_X))
         return Rv_X_hard
 
